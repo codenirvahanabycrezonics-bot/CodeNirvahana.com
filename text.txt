@@ -1,0 +1,21 @@
+code-nirvahana/
+├── index.html
+├── courses.html
+├── course-details.html
+├── notes.html
+├── admin.html
+├── css/
+│   ├── index.css
+│   ├── courses.css
+│   ├── course-details.css
+│   └── notes.css
+├── js/
+│   ├── index.js
+│   ├── courses.js
+│   ├── course-details.js
+│   ├── notes.js
+│   └── admin.js
+├── images/
+│   └── logo.png (create from the SVG above)
+└── assets/
+    └── pdfs/ (empty folder for PDF uploads)
