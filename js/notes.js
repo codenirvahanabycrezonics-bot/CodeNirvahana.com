@@ -1,16 +1,16 @@
-// Notes Page JavaScript
-document.addEventListener('DOMContentLoaded', function() {
+// Notes Page JavaScript - UPDATED WITH SUPABASE
+document.addEventListener('DOMContentLoaded', async function() {
     // Initialize notes page
-    initNotesPage();
+    await initNotesPage();
     initMobileMenu();
-    loadNotes();
+    await loadNotes();
     initUploadNotesModal();
     initEditNotesModal();
     initDeleteNotesModal();
     initSearch();
     
     // Check admin status and update UI
-    updateAdminUI();
+    await updateAdminUI();
 });
 
 // Initialize mobile menu (reused from index.js)
@@ -34,7 +34,16 @@ function initMobileMenu() {
 }
 
 // Initialize notes page
-function initNotesPage() {
+async function initNotesPage() {
+    // Initialize Supabase
+    try {
+        await db.initialize();
+        console.log('Supabase initialized for notes page');
+    } catch (error) {
+        console.error('Failed to initialize Supabase:', error);
+        showToast('Failed to initialize database. Please check your internet connection.', 'error');
+    }
+    
     // Set up event listeners
     setupEventListeners();
     
@@ -70,7 +79,7 @@ function setupEventListeners() {
 }
 
 // Load notes from all courses
-function loadNotes(searchQuery = '') {
+async function loadNotes(searchQuery = '') {
     const notesGrid = document.getElementById('notesGrid');
     const emptyState = document.getElementById('emptyState');
     const loadMoreContainer = document.getElementById('loadMoreContainer');
@@ -80,8 +89,8 @@ function loadNotes(searchQuery = '') {
     // Clear current notes (except empty state)
     notesGrid.innerHTML = '';
     
-    // Get all courses
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    // Get all courses from Supabase
+    const courses = await db.getCourses();
     
     // Collect all notes from all courses
     let allNotes = [];
@@ -192,7 +201,7 @@ function createNoteCard(note) {
     const fileSize = note.size ? formatFileSize(note.size) : 'Size unknown';
     
     // Check if user is admin
-    const isAdmin = checkAdminStatus();
+    const isAdmin = window.currentUserIsAdmin || false;
     
     card.innerHTML = `
         <div class="note-card-header">
@@ -249,15 +258,18 @@ function createNoteCard(note) {
 }
 
 // Check if user is admin
-function checkAdminStatus() {
-    const authUser = JSON.parse(localStorage.getItem('authUser'));
+async function checkAdminStatus() {
+    const authUser = await db.getAuth();
     return authUser && authUser.isLoggedIn && authUser.role === 'admin';
 }
 
 // Update UI based on admin status
-function updateAdminUI() {
-    const isAdmin = checkAdminStatus();
+async function updateAdminUI() {
+    const isAdmin = await checkAdminStatus();
     const adminActionsContainer = document.getElementById('adminActionsContainer');
+    
+    // Store admin status globally
+    window.currentUserIsAdmin = isAdmin;
     
     if (!adminActionsContainer) return;
     
@@ -304,9 +316,9 @@ function initUploadNotesModal() {
     }
     
     if (uploadNotesForm) {
-        uploadNotesForm.addEventListener('submit', function(event) {
+        uploadNotesForm.addEventListener('submit', async function(event) {
             event.preventDefault();
-            handleNotesUpload();
+            await handleNotesUpload();
         });
     }
     
@@ -340,9 +352,9 @@ function initEditNotesModal() {
     }
     
     if (editNotesForm) {
-        editNotesForm.addEventListener('submit', function(event) {
+        editNotesForm.addEventListener('submit', async function(event) {
             event.preventDefault();
-            handleNotesEdit();
+            await handleNotesEdit();
         });
     }
     
@@ -384,25 +396,26 @@ function initSearch() {
         let searchTimeout;
         searchInput.addEventListener('input', function() {
             clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
+            searchTimeout = setTimeout(async () => {
                 const query = searchInput.value.trim();
-                loadNotes(query);
+                await loadNotes(query);
             }, 300);
         });
         
         // Clear search
         if (clearSearchBtn) {
-            clearSearchBtn.addEventListener('click', function() {
+            clearSearchBtn.addEventListener('click', async function() {
                 searchInput.value = '';
-                loadNotes('');
+                await loadNotes('');
             });
         }
     }
 }
 
 // Open upload notes modal
-function openUploadNotesModal() {
-    if (!checkAdminStatus()) {
+async function openUploadNotesModal() {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showAuthModal();
         return;
     }
@@ -411,21 +424,22 @@ function openUploadNotesModal() {
     const notesCourseSelect = document.getElementById('notesCourse');
     
     // Populate course dropdown
-    populateCourseDropdown(notesCourseSelect);
+    await populateCourseDropdown(notesCourseSelect);
     
     // Show modal
     uploadNotesModal.classList.add('active');
 }
 
 // Open edit notes modal
-function openEditNotesModal(courseIndex, noteIndex) {
-    if (!checkAdminStatus()) {
+async function openEditNotesModal(courseIndex, noteIndex) {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showAuthModal();
         return;
     }
     
-    // Get courses from localStorage
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    // Get courses from Supabase
+    const courses = await db.getCourses();
     
     if (courseIndex < 0 || courseIndex >= courses.length) {
         showToast('Course not found', 'error');
@@ -444,7 +458,7 @@ function openEditNotesModal(courseIndex, noteIndex) {
     const editNotesCourseSelect = document.getElementById('editNotesCourse');
     
     // Populate course dropdown
-    populateCourseDropdown(editNotesCourseSelect, courseIndex);
+    await populateCourseDropdown(editNotesCourseSelect, courseIndex);
     
     // Set form values
     document.getElementById('editNotesId').value = note.id;
@@ -472,14 +486,15 @@ function openEditNotesModal(courseIndex, noteIndex) {
 }
 
 // Open delete notes modal
-function openDeleteNotesModal(courseIndex, noteIndex) {
-    if (!checkAdminStatus()) {
+async function openDeleteNotesModal(courseIndex, noteIndex) {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showAuthModal();
         return;
     }
     
-    // Get courses from localStorage
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    // Get courses from Supabase
+    const courses = await db.getCourses();
     
     if (courseIndex < 0 || courseIndex >= courses.length) {
         showToast('Course not found', 'error');
@@ -502,8 +517,8 @@ function openDeleteNotesModal(courseIndex, noteIndex) {
     deleteNotesName.textContent = note.name;
     
     // Set up confirm delete button
-    confirmDeleteNotesBtn.onclick = function() {
-        deleteNote(courseIndex, noteIndex);
+    confirmDeleteNotesBtn.onclick = async function() {
+        await deleteNote(courseIndex, noteIndex);
     };
     
     // Show modal
@@ -511,8 +526,8 @@ function openDeleteNotesModal(courseIndex, noteIndex) {
 }
 
 // Populate course dropdown
-function populateCourseDropdown(selectElement, selectedIndex = null) {
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+async function populateCourseDropdown(selectElement, selectedIndex = null) {
+    const courses = await db.getCourses();
     
     // Clear existing options except the first one
     while (selectElement.options.length > 1) {
@@ -532,8 +547,9 @@ function populateCourseDropdown(selectElement, selectedIndex = null) {
 }
 
 // Handle notes upload
-function handleNotesUpload() {
-    if (!checkAdminStatus()) {
+async function handleNotesUpload() {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showAuthModal();
         return;
     }
@@ -566,8 +582,8 @@ function handleNotesUpload() {
         return;
     }
     
-    // Get courses from localStorage
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    // Get courses from Supabase
+    const courses = await db.getCourses();
     
     if (notesCourseIndex < 0 || notesCourseIndex >= courses.length) {
         showToast('Selected course not found', 'error');
@@ -575,7 +591,7 @@ function handleNotesUpload() {
     }
     
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         const newNote = {
             id: Date.now(),
             name: notesTitle,
@@ -595,26 +611,31 @@ function handleNotesUpload() {
         // Update course timestamp
         courses[notesCourseIndex].updatedAt = new Date().toISOString();
         
-        // Save to localStorage
-        localStorage.setItem('courses', JSON.stringify(courses));
+        // Save to Supabase
+        const result = await db.saveCourses(courses);
         
-        // Close modal and reset form
-        document.getElementById('uploadNotesModal').classList.remove('active');
-        resetUploadForm();
-        
-        // Show success message
-        showToast('Notes uploaded successfully', 'success');
-        
-        // Reload notes
-        loadNotes();
+        if (result.success) {
+            // Close modal and reset form
+            document.getElementById('uploadNotesModal').classList.remove('active');
+            resetUploadForm();
+            
+            // Show success message
+            showToast('Notes uploaded successfully', 'success');
+            
+            // Reload notes
+            await loadNotes();
+        } else {
+            showToast('Failed to upload notes: ' + result.error, 'error');
+        }
     };
     
     reader.readAsDataURL(file);
 }
 
 // Handle notes edit
-function handleNotesEdit() {
-    if (!checkAdminStatus()) {
+async function handleNotesEdit() {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showAuthModal();
         return;
     }
@@ -632,8 +653,8 @@ function handleNotesEdit() {
         return;
     }
     
-    // Get courses from localStorage
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    // Get courses from Supabase
+    const courses = await db.getCourses();
     
     if (courseIndex < 0 || courseIndex >= courses.length ||
         newCourseIndex < 0 || newCourseIndex >= courses.length) {
@@ -670,31 +691,31 @@ function handleNotesEdit() {
         }
         
         const reader = new FileReader();
-        reader.onload = function(e) {
+        reader.onload = async function(e) {
             note.data = e.target.result;
             note.size = file.size;
             note.uploadedAt = new Date().toISOString();
             
             // Move note to new course if course changed
             if (courseIndex !== newCourseIndex) {
-                moveNoteToNewCourse(courses, courseIndex, noteIndex, newCourseIndex, note);
+                await moveNoteToNewCourse(courses, courseIndex, noteIndex, newCourseIndex, note);
             } else {
-                saveCoursesAndUpdate(courses);
+                await saveCoursesAndUpdate(courses);
             }
         };
         reader.readAsDataURL(file);
     } else {
         // Move note to new course if course changed
         if (courseIndex !== newCourseIndex) {
-            moveNoteToNewCourse(courses, courseIndex, noteIndex, newCourseIndex, note);
+            await moveNoteToNewCourse(courses, courseIndex, noteIndex, newCourseIndex, note);
         } else {
-            saveCoursesAndUpdate(courses);
+            await saveCoursesAndUpdate(courses);
         }
     }
 }
 
 // Move note to new course
-function moveNoteToNewCourse(courses, oldCourseIndex, noteIndex, newCourseIndex, note) {
+async function moveNoteToNewCourse(courses, oldCourseIndex, noteIndex, newCourseIndex, note) {
     // Remove note from old course
     courses[oldCourseIndex].notes.splice(noteIndex, 1);
     
@@ -711,34 +732,39 @@ function moveNoteToNewCourse(courses, oldCourseIndex, noteIndex, newCourseIndex,
     // Update new course timestamp
     courses[newCourseIndex].updatedAt = new Date().toISOString();
     
-    saveCoursesAndUpdate(courses);
+    await saveCoursesAndUpdate(courses);
 }
 
 // Save courses and update UI
-function saveCoursesAndUpdate(courses) {
-    // Save to localStorage
-    localStorage.setItem('courses', JSON.stringify(courses));
+async function saveCoursesAndUpdate(courses) {
+    // Save to Supabase
+    const result = await db.saveCourses(courses);
     
-    // Close modal and reset form
-    document.getElementById('editNotesModal').classList.remove('active');
-    resetUploadForm();
-    
-    // Show success message
-    showToast('Notes updated successfully', 'success');
-    
-    // Reload notes
-    loadNotes();
+    if (result.success) {
+        // Close modal and reset form
+        document.getElementById('editNotesModal').classList.remove('active');
+        resetUploadForm();
+        
+        // Show success message
+        showToast('Notes updated successfully', 'success');
+        
+        // Reload notes
+        await loadNotes();
+    } else {
+        showToast('Failed to update notes: ' + result.error, 'error');
+    }
 }
 
 // Delete note
-function deleteNote(courseIndex, noteIndex) {
-    if (!checkAdminStatus()) {
+async function deleteNote(courseIndex, noteIndex) {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showAuthModal();
         return;
     }
     
-    // Get courses from localStorage
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    // Get courses from Supabase
+    const courses = await db.getCourses();
     
     if (courseIndex < 0 || courseIndex >= courses.length) {
         showToast('Course not found', 'error');
@@ -758,23 +784,27 @@ function deleteNote(courseIndex, noteIndex) {
     // Update course timestamp
     course.updatedAt = new Date().toISOString();
     
-    // Save to localStorage
-    localStorage.setItem('courses', JSON.stringify(courses));
+    // Save to Supabase
+    const result = await db.saveCourses(courses);
     
-    // Close modal
-    document.getElementById('deleteNotesModal').classList.remove('active');
-    
-    // Show success message
-    showToast('Notes deleted successfully', 'success');
-    
-    // Reload notes
-    loadNotes();
+    if (result.success) {
+        // Close modal
+        document.getElementById('deleteNotesModal').classList.remove('active');
+        
+        // Show success message
+        showToast('Notes deleted successfully', 'success');
+        
+        // Reload notes
+        await loadNotes();
+    } else {
+        showToast('Failed to delete notes: ' + result.error, 'error');
+    }
 }
 
 // Download note
-function downloadNote(courseIndex, noteIndex) {
-    // Get courses from localStorage
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+async function downloadNote(courseIndex, noteIndex) {
+    // Get courses from Supabase
+    const courses = await db.getCourses();
     
     if (courseIndex < 0 || courseIndex >= courses.length) {
         showToast('Course not found', 'error');

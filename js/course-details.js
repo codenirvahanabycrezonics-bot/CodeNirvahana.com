@@ -1,9 +1,9 @@
-// course-detail.js - UPDATED WITH EDIT/DELETE FUNCTIONALITY
+// course-detail.js - UPDATED WITH SUPABASE INTEGRATION
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('Course Detail Page Initializing...');
     initMobileMenu();
-    initCourseDetailPage();
+    await initCourseDetailPage();
 });
 
 function initMobileMenu() {
@@ -25,22 +25,31 @@ function initMobileMenu() {
     }
 }
 
-function initCourseDetailPage() {
+async function initCourseDetailPage() {
     console.log('Initializing course detail page...');
     
+    // Initialize Supabase
+    try {
+        await db.initialize();
+        console.log('Supabase initialized for course detail page');
+    } catch (error) {
+        console.error('Failed to initialize Supabase:', error);
+        showToast('Failed to initialize database. Please check your internet connection.', 'error');
+    }
+    
     // Initialize all components
-    loadCourseData();
+    await loadCourseData();
     initPlaylist();
     initVideoUploadForm();
     initVideoEditForm();
     initDeleteModal();
     initEventListeners();
-    checkAdminStatus();
+    await checkAdminStatus();
     
     console.log('Course detail page initialized');
 }
 
-function loadCourseData() {
+async function loadCourseData() {
     console.log('Loading course data...');
     
     // Get active course from localStorage
@@ -53,7 +62,7 @@ function loadCourseData() {
         return;
     }
     
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    const courses = await db.getCourses();
     console.log('Total courses:', courses.length);
     
     const courseIndex = parseInt(activeCourseId);
@@ -81,7 +90,7 @@ function loadCourseData() {
     loadPlaylist(course, courseIndex);
     
     // Update stats
-    updateCourseStats(course);
+    await updateCourseStats(course);
 }
 
 function showEmptyCourseState() {
@@ -152,7 +161,7 @@ function updateCourseInfo(course, courseIndex) {
     window.currentCourseIndex = courseIndex;
 }
 
-function loadPlaylist(course, courseIndex) {
+async function loadPlaylist(course, courseIndex) {
     console.log('Loading playlist for course:', course.title);
     
     const playlistContainer = document.getElementById('playlistContainer');
@@ -172,7 +181,7 @@ function loadPlaylist(course, courseIndex) {
     }
     
     // Get watched videos for this course
-    const watchedVideos = JSON.parse(localStorage.getItem('watchedVideos') || '{}');
+    const watchedVideos = await db.getWatchedVideos();
     const courseWatched = watchedVideos[course.id] || [];
     console.log('Watched videos for this course:', courseWatched);
     
@@ -185,7 +194,7 @@ function loadPlaylist(course, courseIndex) {
         const hasNotes = video.notes && video.notes.data;
         const hasAssignment = video.assignment && video.assignment.data;
         const hasCode = video.code && video.code.data;
-        const isAdmin = checkAdminStatus();
+        const isAdmin = window.currentUserIsAdmin || false;
         
         const playlistItem = document.createElement('div');
         playlistItem.className = `playlist-item ${isWatched ? 'watched' : ''}`;
@@ -244,7 +253,7 @@ function loadPlaylist(course, courseIndex) {
     }
 }
 
-function loadVideo(video, course, videoIndex) {
+async function loadVideo(video, course, videoIndex) {
     console.log('Loading video into player:', video.title);
     
     const youtubePlayer = document.getElementById('youtubePlayer');
@@ -277,7 +286,7 @@ function loadVideo(video, course, videoIndex) {
     
     // Mark video as watched
     if (course && course.id && (video.videoId || video.id)) {
-        markVideoAsWatched(course.id, video.videoId || video.id);
+        await markVideoAsWatched(course.id, video.videoId || video.id);
     }
     
     // Update resources section
@@ -329,7 +338,7 @@ function updateActivePlaylistItem(activeIndex) {
     });
 }
 
-function markVideoAsWatched(courseId, videoId) {
+async function markVideoAsWatched(courseId, videoId) {
     if (!courseId || !videoId) {
         console.error('Cannot mark video as watched: missing courseId or videoId');
         return;
@@ -337,7 +346,7 @@ function markVideoAsWatched(courseId, videoId) {
     
     console.log('Marking video as watched:', { courseId, videoId });
     
-    const watchedVideos = JSON.parse(localStorage.getItem('watchedVideos') || '{}');
+    const watchedVideos = await db.getWatchedVideos();
     
     if (!watchedVideos[courseId]) {
         watchedVideos[courseId] = [];
@@ -345,25 +354,25 @@ function markVideoAsWatched(courseId, videoId) {
     
     if (!watchedVideos[courseId].includes(videoId)) {
         watchedVideos[courseId].push(videoId);
-        localStorage.setItem('watchedVideos', JSON.stringify(watchedVideos));
+        await db.saveWatchedVideos(watchedVideos);
         console.log('Video marked as watched');
         
         // Update stats
-        const courses = JSON.parse(localStorage.getItem('courses')) || [];
+        const courses = await db.getCourses();
         const activeCourseId = localStorage.getItem('activeCourseId');
         const courseIndex = parseInt(activeCourseId);
         
         if (!isNaN(courseIndex) && courseIndex >= 0 && courseIndex < courses.length) {
-            updateCourseStats(courses[courseIndex]);
+            await updateCourseStats(courses[courseIndex]);
         }
     }
 }
 
-function updateCourseStats(course) {
+async function updateCourseStats(course) {
     console.log('Updating course stats for:', course.title);
     
     const totalVideos = course.videos ? course.videos.length : 0;
-    const watchedVideos = JSON.parse(localStorage.getItem('watchedVideos') || '{}');
+    const watchedVideos = await db.getWatchedVideos();
     const courseWatched = watchedVideos[course.id] || [];
     const watchedCount = courseWatched.length;
     
@@ -428,9 +437,9 @@ function initPlaylist() {
     // Refresh button
     const refreshBtn = document.getElementById('refreshPlaylist');
     if (refreshBtn) {
-        refreshBtn.addEventListener('click', function() {
+        refreshBtn.addEventListener('click', async function() {
             console.log('Refreshing playlist...');
-            loadCourseData();
+            await loadCourseData();
             showToast('Playlist refreshed', 'success');
         });
     }
@@ -444,10 +453,10 @@ function initVideoUploadForm() {
     const fileInputs = ['notesFile', 'assignmentFile', 'codeFile'];
     
     if (videoUploadForm) {
-        videoUploadForm.addEventListener('submit', function(event) {
+        videoUploadForm.addEventListener('submit', async function(event) {
             event.preventDefault();
             console.log('Video upload form submitted');
-            handleVideoUpload();
+            await handleVideoUpload();
         });
     }
     
@@ -500,10 +509,10 @@ function initVideoEditForm() {
     
     // Reset edit form
     if (resetEditForm) {
-        resetEditForm.addEventListener('click', function() {
+        resetEditForm.addEventListener('click', async function() {
             const videoIndex = document.getElementById('editVideoIndex').value;
             if (videoIndex) {
-                loadVideoIntoEditForm(parseInt(videoIndex));
+                await loadVideoIntoEditForm(parseInt(videoIndex));
             }
         });
     }
@@ -520,10 +529,10 @@ function initVideoEditForm() {
     
     // Edit form submission
     if (editVideoForm) {
-        editVideoForm.addEventListener('submit', function(event) {
+        editVideoForm.addEventListener('submit', async function(event) {
             event.preventDefault();
             console.log('Video edit form submitted');
-            handleVideoEdit();
+            await handleVideoEdit();
         });
     }
     
@@ -594,10 +603,11 @@ function initDeleteModal() {
     });
 }
 
-function openEditVideoModal(videoIndex) {
+async function openEditVideoModal(videoIndex) {
     console.log('Opening edit modal for video index:', videoIndex);
     
-    if (!checkAdminStatus()) {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showToast('Admin access required', 'error');
         return;
     }
@@ -609,16 +619,16 @@ function openEditVideoModal(videoIndex) {
     document.getElementById('editVideoSection').style.display = 'block';
     
     // Load video data into form
-    loadVideoIntoEditForm(videoIndex);
+    await loadVideoIntoEditForm(videoIndex);
 }
 
-function loadVideoIntoEditForm(videoIndex) {
+async function loadVideoIntoEditForm(videoIndex) {
     console.log('Loading video data into edit form for index:', videoIndex);
     
     const activeCourseId = localStorage.getItem('activeCourseId');
     if (!activeCourseId) return;
     
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    const courses = await db.getCourses();
     const courseIndex = parseInt(activeCourseId);
     
     if (isNaN(courseIndex) || courseIndex < 0 || courseIndex >= courses.length) return;
@@ -681,8 +691,8 @@ function updateCurrentFilePreview(type, fileData, previewId, infoId) {
         removeBtn.type = 'button';
         removeBtn.className = 'btn btn-secondary file-action-btn remove-file-btn';
         removeBtn.innerHTML = '<i class="fas fa-times"></i> Remove';
-        removeBtn.onclick = function() {
-            removeFileFromVideo(type);
+        removeBtn.onclick = async function() {
+            await removeFileFromVideo(type);
         };
         
         // Clear existing actions and add new one
@@ -708,7 +718,7 @@ function updateCurrentFilePreview(type, fileData, previewId, infoId) {
     }
 }
 
-function removeFileFromVideo(type) {
+async function removeFileFromVideo(type) {
     console.log('Removing file:', type);
     
     const videoIndex = document.getElementById('editVideoIndex').value;
@@ -717,7 +727,7 @@ function removeFileFromVideo(type) {
     const activeCourseId = localStorage.getItem('activeCourseId');
     if (!activeCourseId) return;
     
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    const courses = await db.getCourses();
     const courseIndex = parseInt(activeCourseId);
     
     if (isNaN(courseIndex) || courseIndex < 0 || courseIndex >= courses.length) return;
@@ -731,7 +741,7 @@ function removeFileFromVideo(type) {
     delete videos[videoIndex][type];
     
     // Save changes
-    localStorage.setItem('courses', JSON.stringify(courses));
+    await db.saveCourses(courses);
     
     // Update preview
     updateCurrentFilePreview(type, null, 
@@ -740,16 +750,16 @@ function removeFileFromVideo(type) {
     
     // If removing notes, also remove from notes page
     if (type === 'notes') {
-        removeNotesFromNotesPage(courses[courseIndex].id, videos[videoIndex].videoId || videos[videoIndex].id);
+        await removeNotesFromNotesPage(courses[courseIndex].id, videos[videoIndex].videoId || videos[videoIndex].id);
     }
     
     showToast(`${type.charAt(0).toUpperCase() + type.slice(1)} removed`, 'success');
 }
 
-function removeNotesFromNotesPage(courseId, videoId) {
+async function removeNotesFromNotesPage(courseId, videoId) {
     console.log('Removing notes from notes page:', { courseId, videoId });
     
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    const courses = await db.getCourses();
     const courseIndex = courses.findIndex(c => c.id === courseId);
     
     if (courseIndex === -1) return;
@@ -764,18 +774,19 @@ function removeNotesFromNotesPage(courseId, videoId) {
     });
     
     courses[courseIndex].notes = updatedNotes;
-    localStorage.setItem('courses', JSON.stringify(courses));
+    await db.saveCourses(courses);
     
     // Trigger notes page update if available
     if (window.CodeNirvahana && window.CodeNirvahana.notes && window.CodeNirvahana.notes.loadNotes) {
-        window.CodeNirvahana.notes.loadNotes();
+        await window.CodeNirvahana.notes.loadNotes();
     }
 }
 
-function handleVideoEdit() {
+async function handleVideoEdit() {
     console.log('Handling video edit...');
     
-    if (!checkAdminStatus()) {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showToast('Admin access required', 'error');
         return;
     }
@@ -807,7 +818,7 @@ function handleVideoEdit() {
         return;
     }
     
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    const courses = await db.getCourses();
     const courseIndex = parseInt(activeCourseId);
     
     if (isNaN(courseIndex) || courseIndex < 0 || courseIndex >= courses.length) {
@@ -881,13 +892,14 @@ function handleVideoEdit() {
         });
     };
     
-    // Process all file uploads
-    Promise.all([
-        processFileUpload('editNotesFile', 'notes'),
-        processFileUpload('editAssignmentFile', 'assignment'),
-        processFileUpload('editCodeFile', 'code')
-    ])
-    .then(results => {
+    try {
+        // Process all file uploads
+        const results = await Promise.all([
+            processFileUpload('editNotesFile', 'notes'),
+            processFileUpload('editAssignmentFile', 'assignment'),
+            processFileUpload('editCodeFile', 'code')
+        ]);
+        
         // Update files if new ones were uploaded
         if (results[0]) {
             video.notes = {
@@ -898,7 +910,7 @@ function handleVideoEdit() {
             };
             
             // Sync with notes page
-            syncNotesWithNotesPage(course, video, results[0]);
+            await syncNotesWithNotesPage(course, video, results[0]);
         }
         
         if (results[1]) {
@@ -921,7 +933,7 @@ function handleVideoEdit() {
         
         // Save changes
         course.updatedAt = new Date().toISOString();
-        localStorage.setItem('courses', JSON.stringify(courses));
+        await db.saveCourses(courses);
         
         // Hide edit form
         document.getElementById('editVideoSection').style.display = 'none';
@@ -933,17 +945,16 @@ function handleVideoEdit() {
         showToast('Video updated successfully', 'success');
         
         // Reload course data
-        loadCourseData();
+        await loadCourseData();
         
         // Reload current video if it was the one edited
         if (window.currentVideoIndex === videoIndex) {
             loadVideo(video, course, videoIndex);
         }
-    })
-    .catch(error => {
+    } catch (error) {
         console.error('Error updating files:', error);
         showToast('Error updating files: ' + error.message, 'error');
-    });
+    }
 }
 
 function resetEditFormFields() {
@@ -986,10 +997,11 @@ function resetEditFormFields() {
     document.getElementById('deleteVideoBtn').style.display = 'none';
 }
 
-function openDeleteVideoModal(videoIndex) {
+async function openDeleteVideoModal(videoIndex) {
     console.log('Opening delete modal for video index:', videoIndex);
     
-    if (!checkAdminStatus()) {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showToast('Admin access required', 'error');
         return;
     }
@@ -998,7 +1010,7 @@ function openDeleteVideoModal(videoIndex) {
     const activeCourseId = localStorage.getItem('activeCourseId');
     if (!activeCourseId) return;
     
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    const courses = await db.getCourses();
     const courseIndex = parseInt(activeCourseId);
     
     if (isNaN(courseIndex) || courseIndex < 0 || courseIndex >= courses.length) return;
@@ -1020,8 +1032,8 @@ function openDeleteVideoModal(videoIndex) {
     
     // Set up confirm delete button
     const confirmDeleteBtn = document.getElementById('confirmDeleteVideoBtn');
-    confirmDeleteBtn.onclick = function() {
-        deleteVideo(videoIndex);
+    confirmDeleteBtn.onclick = async function() {
+        await deleteVideo(videoIndex);
         document.getElementById('deleteConfirmModal').classList.remove('active');
     };
     
@@ -1029,10 +1041,11 @@ function openDeleteVideoModal(videoIndex) {
     document.getElementById('deleteConfirmModal').classList.add('active');
 }
 
-function deleteVideo(videoIndex) {
+async function deleteVideo(videoIndex) {
     console.log('Deleting video at index:', videoIndex);
     
-    if (!checkAdminStatus()) {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showToast('Admin access required', 'error');
         return;
     }
@@ -1044,7 +1057,7 @@ function deleteVideo(videoIndex) {
         return;
     }
     
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    const courses = await db.getCourses();
     const courseIndex = parseInt(activeCourseId);
     
     if (isNaN(courseIndex) || courseIndex < 0 || courseIndex >= courses.length) {
@@ -1064,7 +1077,7 @@ function deleteVideo(videoIndex) {
     
     // Remove notes from notes page if exists
     if (video.notes) {
-        removeNotesFromNotesPage(course.id, video.videoId || video.id);
+        await removeNotesFromNotesPage(course.id, video.videoId || video.id);
     }
     
     // Remove video from array
@@ -1074,8 +1087,8 @@ function deleteVideo(videoIndex) {
     course.videos = videos;
     course.updatedAt = new Date().toISOString();
     
-    // Save to localStorage
-    localStorage.setItem('courses', JSON.stringify(courses));
+    // Save to Supabase
+    await db.saveCourses(courses);
     
     // Hide edit form if open
     document.getElementById('editVideoSection').style.display = 'none';
@@ -1084,7 +1097,7 @@ function deleteVideo(videoIndex) {
     showToast('Video deleted successfully', 'success');
     
     // Reload course data
-    loadCourseData();
+    await loadCourseData();
     
     // Clear current video if it was deleted
     if (window.currentVideoIndex === videoIndex) {
@@ -1116,10 +1129,11 @@ function deleteVideo(videoIndex) {
     }
 }
 
-function handleVideoUpload() {
+async function handleVideoUpload() {
     console.log('Handling video upload...');
     
-    if (!checkAdminStatus()) {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showToast('Admin access required', 'error');
         return;
     }
@@ -1149,7 +1163,7 @@ function handleVideoUpload() {
         return;
     }
     
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    const courses = await db.getCourses();
     const courseIndex = parseInt(activeCourseId);
     
     if (isNaN(courseIndex) || courseIndex < 0 || courseIndex >= courses.length) {
@@ -1222,13 +1236,14 @@ function handleVideoUpload() {
         });
     };
     
-    // Process all files
-    Promise.all([
-        processFile('notesFile', 'notes'),
-        processFile('assignmentFile', 'assignment'),
-        processFile('codeFile', 'code')
-    ])
-    .then(results => {
+    try {
+        // Process all files
+        const results = await Promise.all([
+            processFile('notesFile', 'notes'),
+            processFile('assignmentFile', 'assignment'),
+            processFile('codeFile', 'code')
+        ]);
+        
         // Add files to video object
         if (results[0]) {
             newVideo.notes = {
@@ -1239,7 +1254,7 @@ function handleVideoUpload() {
             };
             
             // Sync with notes page
-            syncNotesWithNotesPage(course, newVideo, results[0]);
+            await syncNotesWithNotesPage(course, newVideo, results[0]);
         }
         
         if (results[1]) {
@@ -1268,8 +1283,8 @@ function handleVideoUpload() {
         course.videos.push(newVideo);
         course.updatedAt = new Date().toISOString();
         
-        // Save to localStorage
-        localStorage.setItem('courses', JSON.stringify(courses));
+        // Save to Supabase
+        await db.saveCourses(courses);
         
         // Reset form
         resetUploadFormFields();
@@ -1281,12 +1296,11 @@ function handleVideoUpload() {
         showToast('Video added successfully', 'success');
         
         // Reload course data
-        loadCourseData();
-    })
-    .catch(error => {
+        await loadCourseData();
+    } catch (error) {
         console.error('Error uploading files:', error);
         showToast('Error uploading files: ' + error.message, 'error');
-    });
+    }
 }
 
 function resetUploadFormFields() {
@@ -1311,11 +1325,11 @@ function resetUploadFormFields() {
     document.getElementById('codePreview').style.display = 'none';
 }
 
-function syncNotesWithNotesPage(course, video, notesData) {
+async function syncNotesWithNotesPage(course, video, notesData) {
     console.log('Syncing notes with notes page...');
     
     // Get all courses
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    const courses = await db.getCourses();
     const courseIndex = courses.findIndex(c => c.id === course.id);
     
     if (courseIndex === -1) {
@@ -1344,21 +1358,21 @@ function syncNotesWithNotesPage(course, video, notesData) {
     // Update course timestamp
     courses[courseIndex].updatedAt = new Date().toISOString();
     
-    // Save back to localStorage
-    localStorage.setItem('courses', JSON.stringify(courses));
+    // Save back to Supabase
+    await db.saveCourses(courses);
     
     console.log('Notes synced with notes page');
     
     // Trigger notes page update if available
     if (window.CodeNirvahana && window.CodeNirvahana.notes && window.CodeNirvahana.notes.loadNotes) {
-        window.CodeNirvahana.notes.loadNotes();
+        await window.CodeNirvahana.notes.loadNotes();
     }
 }
 
-function checkAdminStatus() {
+async function checkAdminStatus() {
     console.log('Checking admin status...');
     
-    const authUser = JSON.parse(localStorage.getItem('authUser'));
+    const authUser = await db.getAuth();
     const isAdmin = authUser && authUser.isLoggedIn && authUser.role === 'admin';
     
     const addVideoBtn = document.getElementById('addVideoBtn');
@@ -1366,6 +1380,9 @@ function checkAdminStatus() {
     const toggleUploadForm = document.getElementById('toggleUploadForm');
     
     console.log('Is admin?', isAdmin);
+    
+    // Store admin status globally
+    window.currentUserIsAdmin = isAdmin;
     
     if (isAdmin) {
         // Show admin controls
@@ -1402,10 +1419,10 @@ function initEventListeners() {
     });
     
     // Handle page visibility change
-    document.addEventListener('visibilitychange', function() {
+    document.addEventListener('visibilitychange', async function() {
         if (!document.hidden) {
             // Page became visible again, refresh data
-            loadCourseData();
+            await loadCourseData();
         }
     });
 }

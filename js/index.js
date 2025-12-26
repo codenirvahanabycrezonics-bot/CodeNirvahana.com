@@ -1,5 +1,5 @@
-// Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
+// Initialize when DOM is loaded - UPDATED WITH SUPABASE
+document.addEventListener('DOMContentLoaded', async function() {
     // Initialize all components
     initMobileMenu();
     initScrollAnimations();
@@ -7,6 +7,14 @@ document.addEventListener('DOMContentLoaded', function() {
     initCurrentYear();
     initNavbarScroll();
     initSmoothScroll();
+    
+    // Initialize Supabase
+    try {
+        await db.initialize();
+        console.log('Supabase initialized for index page');
+    } catch (error) {
+        console.error('Failed to initialize Supabase:', error);
+    }
 });
 
 // Mobile menu toggle
@@ -153,30 +161,27 @@ function initSmoothScroll() {
 }
 
 // Check auth status on page load
-function checkAuthStatus() {
-    const authUser = JSON.parse(localStorage.getItem('authUser'));
+async function checkAuthStatus() {
+    const authUser = await db.getAuth();
     
     if (!authUser) {
-        // Create default guest user
-        localStorage.setItem('authUser', JSON.stringify({
+        // Create default guest user in Supabase
+        await db.saveAuth({
             isLoggedIn: false,
             role: 'guest'
-        }));
+        });
         return { isLoggedIn: false, role: 'guest' };
     }
     
     return authUser;
 }
 
-// Initialize auth check
-checkAuthStatus();
-
 // Export for use in other files
 window.CodeNirvahana = window.CodeNirvahana || {};
 window.CodeNirvahana.auth = {
     checkAuthStatus: checkAuthStatus,
-    isAdmin: function() {
-        const auth = checkAuthStatus();
+    isAdmin: async function() {
+        const auth = await checkAuthStatus();
         return auth.isLoggedIn && auth.role === 'admin';
     }
 };

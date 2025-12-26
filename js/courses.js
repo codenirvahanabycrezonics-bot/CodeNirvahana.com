@@ -1,15 +1,15 @@
-// Courses Page JavaScript
-document.addEventListener('DOMContentLoaded', function() {
+// Courses Page JavaScript - UPDATED WITH SUPABASE
+document.addEventListener('DOMContentLoaded', async function() {
     // Initialize courses page
-    initCoursesPage();
+    await initCoursesPage();
     initMobileMenu();
-    loadCourses();
+    await loadCourses();
     initAddCourseModal();
     initEditCourseModal();
     initDeleteModal();
     
     // Check admin status and update UI
-    updateAdminUI();
+    await updateAdminUI();
 });
 
 // Initialize mobile menu
@@ -33,7 +33,16 @@ function initMobileMenu() {
 }
 
 // Initialize courses page
-function initCoursesPage() {
+async function initCoursesPage() {
+    // Initialize Supabase
+    try {
+        await db.initialize();
+        console.log('Supabase initialized for courses page');
+    } catch (error) {
+        console.error('Failed to initialize Supabase:', error);
+        showToast('Failed to initialize database. Please check your internet connection.', 'error');
+    }
+    
     // Set up event listeners
     setupEventListeners();
 }
@@ -60,8 +69,8 @@ function setupEventListeners() {
     });
 }
 
-// Load courses from localStorage
-function loadCourses() {
+// Load courses from Supabase
+async function loadCourses() {
     const coursesGrid = document.getElementById('coursesGrid');
     const emptyState = document.getElementById('emptyState');
     
@@ -70,8 +79,8 @@ function loadCourses() {
     // Clear current courses (except empty state)
     coursesGrid.innerHTML = '';
     
-    // Get courses from localStorage
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    // Get courses from Supabase
+    const courses = await db.getCourses();
     
     if (courses.length === 0) {
         // Show empty state
@@ -106,7 +115,7 @@ function createCourseCard(course, index) {
     const videosCount = course.videos ? course.videos.length : 0;
     
     // Check if user is admin
-    const isAdmin = checkAdminStatus();
+    const isAdmin = window.currentUserIsAdmin || false;
     
     card.innerHTML = `
         <div class="course-card-header">
@@ -155,7 +164,7 @@ function createCourseCard(course, index) {
 
 // View course details
 function viewCourseDetails(courseIndex) {
-    // Save active course ID to localStorage
+    // Save active course ID to localStorage (temporary, for page navigation)
     localStorage.setItem('activeCourseId', courseIndex.toString());
     
     // Redirect to course details page
@@ -163,8 +172,8 @@ function viewCourseDetails(courseIndex) {
 }
 
 // Check if user is admin
-function checkAdminStatus() {
-    const authUser = JSON.parse(localStorage.getItem('authUser'));
+async function checkAdminStatus() {
+    const authUser = await db.getAuth();
     if (!authUser) {
         return false;
     }
@@ -172,9 +181,12 @@ function checkAdminStatus() {
 }
 
 // Update UI based on admin status
-function updateAdminUI() {
-    const isAdmin = checkAdminStatus();
+async function updateAdminUI() {
+    const isAdmin = await checkAdminStatus();
     const adminActionsContainer = document.getElementById('adminActionsContainer');
+    
+    // Store admin status globally
+    window.currentUserIsAdmin = isAdmin;
     
     if (!adminActionsContainer) return;
     
@@ -218,9 +230,9 @@ function initAddCourseModal() {
     }
     
     if (addCourseForm) {
-        addCourseForm.addEventListener('submit', function(event) {
+        addCourseForm.addEventListener('submit', async function(event) {
             event.preventDefault();
-            saveNewCourse();
+            await saveNewCourse();
         });
     }
 }
@@ -245,9 +257,9 @@ function initEditCourseModal() {
     }
     
     if (editCourseForm) {
-        editCourseForm.addEventListener('submit', function(event) {
+        editCourseForm.addEventListener('submit', async function(event) {
             event.preventDefault();
-            saveEditedCourse();
+            await saveEditedCourse();
         });
     }
 }
@@ -274,13 +286,14 @@ function initDeleteModal() {
 }
 
 // Open edit course modal
-function openEditCourseModal(courseIndex) {
-    if (!checkAdminStatus()) {
+async function openEditCourseModal(courseIndex) {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showAuthModal();
         return;
     }
     
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    const courses = await db.getCourses();
     const course = courses[courseIndex];
     
     if (!course) return;
@@ -310,13 +323,14 @@ function openEditCourseModal(courseIndex) {
 }
 
 // Open delete confirmation modal
-function openDeleteModal(courseIndex) {
-    if (!checkAdminStatus()) {
+async function openDeleteModal(courseIndex) {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showAuthModal();
         return;
     }
     
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    const courses = await db.getCourses();
     const course = courses[courseIndex];
     
     if (!course) return;
@@ -326,8 +340,8 @@ function openDeleteModal(courseIndex) {
     
     // Set up confirm delete button
     const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
-    confirmDeleteBtn.onclick = function() {
-        deleteCourse(courseIndex);
+    confirmDeleteBtn.onclick = async function() {
+        await deleteCourse(courseIndex);
     };
     
     // Show modal
@@ -335,8 +349,9 @@ function openDeleteModal(courseIndex) {
 }
 
 // Save new course
-function saveNewCourse() {
-    if (!checkAdminStatus()) {
+async function saveNewCourse() {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showAuthModal();
         return;
     }
@@ -351,7 +366,7 @@ function saveNewCourse() {
     }
     
     // Get existing courses
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    const courses = await db.getCourses();
     
     // Create new course object
     const newCourse = {
@@ -373,38 +388,43 @@ function saveNewCourse() {
         }
         
         const reader = new FileReader();
-        reader.onload = function(e) {
+        reader.onload = async function(e) {
             newCourse.thumbnail = e.target.result;
-            saveCourseToStorage(courses, newCourse);
+            await saveCourseToStorage(courses, newCourse);
         };
         reader.readAsDataURL(file);
     } else {
-        saveCourseToStorage(courses, newCourse);
+        await saveCourseToStorage(courses, newCourse);
     }
 }
 
 // Save course to storage
-function saveCourseToStorage(courses, newCourse) {
+async function saveCourseToStorage(courses, newCourse) {
     // Add new course
     courses.push(newCourse);
     
-    // Save to localStorage
-    localStorage.setItem('courses', JSON.stringify(courses));
+    // Save to Supabase
+    const result = await db.saveCourses(courses);
     
-    // Reset form and close modal
-    document.getElementById('addCourseForm').reset();
-    document.getElementById('addCourseModal').classList.remove('active');
-    
-    // Show success message
-    showToast('Course created successfully', 'success');
-    
-    // Reload courses
-    loadCourses();
+    if (result.success) {
+        // Reset form and close modal
+        document.getElementById('addCourseForm').reset();
+        document.getElementById('addCourseModal').classList.remove('active');
+        
+        // Show success message
+        showToast('Course created successfully', 'success');
+        
+        // Reload courses
+        await loadCourses();
+    } else {
+        showToast('Failed to save course: ' + result.error, 'error');
+    }
 }
 
 // Save edited course
-function saveEditedCourse() {
-    if (!checkAdminStatus()) {
+async function saveEditedCourse() {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showAuthModal();
         return;
     }
@@ -420,7 +440,7 @@ function saveEditedCourse() {
     }
     
     // Get existing courses
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    const courses = await db.getCourses();
     
     if (courseIndex < 0 || courseIndex >= courses.length) {
         showToast('Course not found', 'error');
@@ -441,40 +461,45 @@ function saveEditedCourse() {
         }
         
         const reader = new FileReader();
-        reader.onload = function(e) {
+        reader.onload = async function(e) {
             courses[courseIndex].thumbnail = e.target.result;
-            saveEditedCourseToStorage(courses);
+            await saveEditedCourseToStorage(courses);
         };
         reader.readAsDataURL(file);
     } else {
-        saveEditedCourseToStorage(courses);
+        await saveEditedCourseToStorage(courses);
     }
 }
 
 // Save edited course to storage
-function saveEditedCourseToStorage(courses) {
-    // Save to localStorage
-    localStorage.setItem('courses', JSON.stringify(courses));
+async function saveEditedCourseToStorage(courses) {
+    // Save to Supabase
+    const result = await db.saveCourses(courses);
     
-    // Close modal
-    document.getElementById('editCourseModal').classList.remove('active');
-    
-    // Show success message
-    showToast('Course updated successfully', 'success');
-    
-    // Reload courses
-    loadCourses();
+    if (result.success) {
+        // Close modal
+        document.getElementById('editCourseModal').classList.remove('active');
+        
+        // Show success message
+        showToast('Course updated successfully', 'success');
+        
+        // Reload courses
+        await loadCourses();
+    } else {
+        showToast('Failed to update course: ' + result.error, 'error');
+    }
 }
 
 // Delete course
-function deleteCourse(courseIndex) {
-    if (!checkAdminStatus()) {
+async function deleteCourse(courseIndex) {
+    const isAdmin = await checkAdminStatus();
+    if (!isAdmin) {
         showAuthModal();
         return;
     }
     
     // Get existing courses
-    const courses = JSON.parse(localStorage.getItem('courses')) || [];
+    const courses = await db.getCourses();
     
     if (courseIndex < 0 || courseIndex >= courses.length) {
         showToast('Course not found', 'error');
@@ -484,17 +509,21 @@ function deleteCourse(courseIndex) {
     // Remove course
     courses.splice(courseIndex, 1);
     
-    // Save to localStorage
-    localStorage.setItem('courses', JSON.stringify(courses));
+    // Save to Supabase
+    const result = await db.saveCourses(courses);
     
-    // Close modal
-    document.getElementById('deleteConfirmModal').classList.remove('active');
-    
-    // Show success message
-    showToast('Course deleted successfully', 'success');
-    
-    // Reload courses
-    loadCourses();
+    if (result.success) {
+        // Close modal
+        document.getElementById('deleteConfirmModal').classList.remove('active');
+        
+        // Show success message
+        showToast('Course deleted successfully', 'success');
+        
+        // Reload courses
+        await loadCourses();
+    } else {
+        showToast('Failed to delete course: ' + result.error, 'error');
+    }
 }
 
 // Show authentication required modal
